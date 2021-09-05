@@ -1,4 +1,4 @@
-# AOSISCSoundPatcher-FR
+# AOS ISC Sound Patcher
 Applique les modifications d'Audio Overhaul Skyrim / Immersive Sound Compendium à tous vos mods.
 
 ## Version à utiliser
