@@ -5,6 +5,8 @@ using Mutagen.Bethesda.Synthesis;
 using Mutagen.Bethesda.Skyrim;
 using System.Threading.Tasks;
 using Mutagen.Bethesda.FormKeys.SkyrimSE;
+using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Strings;
 
 namespace AOSISCSoundPatcher
 {
@@ -38,6 +40,10 @@ namespace AOSISCSoundPatcher
                     if (armor.Keywords == null) continue;
 
                     var armorCopy = armor.DeepCopy();
+
+                    if (armorCopy.Name != null && armorCopy.Name.TryLookup(Language.French, out string i18nArmorName)) {
+                        armorCopy.Name = i18nArmorName;
+                    }
 
                     if (armor.Keywords.Contains(Skyrim.Keyword.ClothingRing))
                     {
@@ -78,6 +84,10 @@ namespace AOSISCSoundPatcher
                     if (weapon.Keywords == null) continue;
 
                     var weaponCopy = weapon.DeepCopy();
+
+                    if (weaponCopy.Name != null && weaponCopy.Name.TryLookup(Language.French, out string i18nWeaponName)) {
+                        weaponCopy.Name = i18nWeaponName;
+                    }
 
                     if (aosActive)
                     {
