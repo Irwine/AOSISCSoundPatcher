@@ -45,6 +45,10 @@ namespace AOSISCSoundPatcher
                         armorCopy.Name = i18nArmorName;
                     }
 
+                    if (armorCopy.Description != null && armorCopy.Description.TryLookup(Language.French, out string i18nArmorDescription)) {
+                        armorCopy.Description = i18nArmorDescription;
+                    }
+
                     if (armor.Keywords.Contains(Skyrim.Keyword.ClothingRing))
                     {
                         armorCopy.PickUpSound.SetTo(ImmersiveSoundsCompendium.ITMRingUp);
