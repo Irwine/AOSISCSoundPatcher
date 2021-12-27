@@ -161,6 +161,14 @@ namespace AOSISCSoundPatcher
                     if (magicEffect.Projectile == null) continue;
 
                     var magicEffectCopy = magicEffect.DeepCopy();
+                    
+                    if (magicEffectCopy.Name != null && magicEffectCopy.Name.TryLookup(Language.French, out string i18nEffectName)) {
+                        magicEffectCopy.Name = i18nEffectName;
+                    }
+                    
+                    if (magicEffectCopy.Description != null && magicEffectCopy.Description.TryLookup(Language.French, out string i18nEffectDescription)) {
+                        magicEffectCopy.Description = i18nEffectDescription;
+                    }
 
                     if (aosActive)
                     {
