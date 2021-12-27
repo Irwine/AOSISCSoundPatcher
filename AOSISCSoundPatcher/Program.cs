@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Synthesis;
@@ -21,26 +20,21 @@ namespace AOSISCSoundPatcher
                 .Run(args);
         }
 
-        private readonly static ModKey ImmersiveSoundsCompendium = ModKey.FromNameAndExtension("Immersive Sounds - Compendium.esp");
-        private readonly static ModKey AudioOverhaulSkyrim = ModKey.FromNameAndExtension("Audio Overhaul Skyrim.esp");
-
         public static void RunPatch(IPatcherState<ISkyrimMod, ISkyrimModGetter> state)
         {
-            if (!state.LoadOrder.ContainsKey(ImmersiveSoundsCompendium) && !state.LoadOrder.ContainsKey(AudioOverhaulSkyrim))
+            bool iscActive = state.LoadOrder.ContainsKey(ImmersiveSoundsCompendium.ModKey);
+            bool aosActive = state.LoadOrder.ContainsKey(AudioOverhaulSkyrim.ModKey);
+
+            if (!iscActive && !aosActive)
                 throw new Exception("This patcher won't function without either Immersive Sounds Compendium or Audio Overhaul Skyrim! Either don't use this patcher or use one of the above mods to let it function.");
-
-            if (state.LoadOrder.ContainsKey(ImmersiveSoundsCompendium))
-            {
+            if (iscActive)
                 Console.WriteLine("Detected Immersive Sounds Compendium.");
+            if (aosActive)
+                Console.WriteLine("Detected Audio Overhaul for Skyrim.");
 
-                var ringLink = new FormLink<ISoundDescriptorGetter>(ImmersiveSoundsCompendium.MakeFormKey(0x08AB14));
-                var neckUpLink = new FormLink<ISoundDescriptorGetter>(ImmersiveSoundsCompendium.MakeFormKey(0x08AB15));
-                var neckDownLink = new FormLink<ISoundDescriptorGetter>(ImmersiveSoundsCompendium.MakeFormKey(0x08AB16));
-                var swingAxeLink = new FormLink<ISoundDescriptorGetter>(ImmersiveSoundsCompendium.MakeFormKey(0x1E6B31));
-                var swingBoundAxeLink = new FormLink<ISoundDescriptorGetter>(ImmersiveSoundsCompendium.MakeFormKey(0x04C731));
-                var swingBluntLink = new FormLink<ISoundDescriptorGetter>(ImmersiveSoundsCompendium.MakeFormKey(0x1F5E3B));
-                var swingBladeLink = new FormLink<ISoundDescriptorGetter>(ImmersiveSoundsCompendium.MakeFormKey(0x04762F));
-
+            if (iscActive)
+            {
+                // Patch Armor sounds, Rings (pick up sound) & Necklaces equip and unequip sounds.
                 foreach (var armor in state.LoadOrder.PriorityOrder.Armor().WinningOverrides())
                 {
                     if (armor.Keywords == null) continue;
@@ -51,78 +45,157 @@ namespace AOSISCSoundPatcher
                         armorCopy.Name = i18nArmorName;
                     }
 
-                    if (armor.Keywords.Contains(Skyrim.Keyword.ClothingRing) && armor.PickUpSound.FormKey != ringLink.FormKey)
-                    {
-                        armorCopy.PickUpSound.SetTo(ringLink);
-                        state.PatchMod.Armors.Set(armorCopy);
+                    if (armorCopy.Description != null && armorCopy.Description.TryLookup(Language.French, out string i18nArmorDescription)) {
+                        armorCopy.Description = i18nArmorDescription;
                     }
-                    else if (armor.Keywords.Contains(Skyrim.Keyword.ClothingNecklace) && (armor.PickUpSound.FormKey != neckUpLink.FormKey || armor.PutDownSound.FormKey != neckDownLink.FormKey))
+
+                    if (armor.Keywords.Contains(Skyrim.Keyword.ClothingRing))
                     {
-                        armorCopy.PickUpSound.SetTo(neckUpLink);
-                        armorCopy.PutDownSound.SetTo(neckDownLink);
-                        state.PatchMod.Armors.Set(armorCopy);
+                        armorCopy.PickUpSound.SetTo(ImmersiveSoundsCompendium.ITMRingUp);
                     }
+                    else if (armor.Keywords.Contains(Skyrim.Keyword.ClothingNecklace))
+                    {
+                        armorCopy.PickUpSound.SetTo(ImmersiveSoundsCompendium.ITMNeckUp);
+                        armorCopy.PutDownSound.SetTo(ImmersiveSoundsCompendium.ITMNeckDown);
+                    }
+                    else if(armor.Keywords.Contains(Skyrim.Keyword.ArmorCuirass))
+                    {
+                        foreach(var keyword in armor.Keywords)
+                        {
+                            if(ImmersiveSoundsCompendium.FootstepSets.TryGetValue(keyword, out var armorSound))
+                            {
+                                foreach(var armorAddon in armor.Armature)
+                                {
+                                    var resolvedAddon = armorAddon.TryResolve(state.LinkCache);
+                                    if(resolvedAddon is not null && resolvedAddon.FootstepSound.IsNull)
+                                    {
+                                        var addonCopy = resolvedAddon.DeepCopy();
+                                        addonCopy.FootstepSound.SetTo(armorSound);
+                                        state.PatchMod.ArmorAddons.Set(addonCopy);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (armor.PickUpSound.FormKey != armorCopy.PickUpSound.FormKey || armor.PutDownSound.FormKey != armorCopy.PutDownSound.FormKey)
+                        state.PatchMod.Armors.Set(armorCopy);
                 }
 
+                // Patch weapon swing and impact sounds.
                 foreach (var weapon in state.LoadOrder.PriorityOrder.Weapon().WinningOverrides())
                 {
                     if (weapon.Keywords == null) continue;
 
                     var weaponCopy = weapon.DeepCopy();
-                    
+
                     if (weaponCopy.Name != null && weaponCopy.Name.TryLookup(Language.French, out string i18nWeaponName)) {
                         weaponCopy.Name = i18nWeaponName;
                     }
-                    
+
+                    if (aosActive)
+                    {
+                        if (weapon.Keywords.Contains(Skyrim.Keyword.WeapTypeDagger) && weapon.Data != null && !weapon.Data.Flags.HasFlag(WeaponData.Flag.BoundWeapon))
+                        {
+                            weaponCopy.ImpactDataSet.SetTo(AudioOverhaulSkyrim.WPNzBlade1HandSmallImpactSet);
+                            weaponCopy.EquipSound.SetTo(Skyrim.SoundDescriptor.WPNBlade1HandSmallDrawSD);
+                            weaponCopy.UnequipSound.SetTo(Skyrim.SoundDescriptor.WPNBlade1HandSmallSheatheSD);
+                        }
+
+                        var changed = weapon.ImpactDataSet.FormKey != weaponCopy.ImpactDataSet.FormKey || weapon.EquipSound.FormKey != weaponCopy.EquipSound.FormKey || weapon.UnequipSound.FormKey != weaponCopy.UnequipSound.FormKey;
+
+                        if (changed)
+                            state.PatchMod.Weapons.Set(weaponCopy);
+                    }
+
                     if (weapon.Keywords.Contains(Skyrim.Keyword.WeapTypeBattleaxe))
                     {
-                        if (weapon.Data != null && weapon.Data.Flags.HasFlag(WeaponData.Flag.BoundWeapon) && weapon.AttackFailSound.FormKey != swingBoundAxeLink.FormKey)
+                        if (weapon.Data?.Flags.HasFlag(WeaponData.Flag.BoundWeapon) ?? false)
                         {
-                            weaponCopy.AttackFailSound.SetTo(swingBoundAxeLink);
-                            state.PatchMod.Weapons.Set(weaponCopy);
+                            weaponCopy.AttackFailSound.SetTo(ImmersiveSoundsCompendium.WPNSwing2HandBound);
                         }
-                        else if (weapon.AttackFailSound.FormKey != swingAxeLink.FormKey)
+                        else
                         {
-                            weaponCopy.AttackFailSound.SetTo(swingAxeLink);
-                            state.PatchMod.Weapons.Set(weaponCopy);
+                            weaponCopy.AttackFailSound.SetTo(ImmersiveSoundsCompendium.WPNSwingAxe2Hand);
                         }
+
                     }
 
-                    else if (weapon.Keywords.Contains(Skyrim.Keyword.WeapTypeWarhammer) && weapon.AttackFailSound.FormKey != swingBluntLink.FormKey)
+                    else if (weapon.Keywords.Contains(Skyrim.Keyword.WeapTypeWarhammer))
                     {
-                        weaponCopy.AttackFailSound.SetTo(swingBluntLink);
+                        weaponCopy.AttackFailSound.SetTo(ImmersiveSoundsCompendium.WPNSwingBlunt2Hand);
+                    }
+
+                    else if (weapon.Keywords.Contains(Skyrim.Keyword.WeapTypeSword) && weapon.Data != null && weapon.Data.Flags.HasFlag(WeaponData.Flag.BoundWeapon))
+                    {
+                        weaponCopy.AttackFailSound.SetTo(ImmersiveSoundsCompendium.WPNSwingBladeMediumBoundSD);
+                    }
+
+                    if (weapon.AttackFailSound.FormKey != weaponCopy.AttackFailSound.FormKey ||
+                        weapon.ImpactDataSet.FormKey != weaponCopy.ImpactDataSet.FormKey ||
+                        weapon.EquipSound.FormKey != weaponCopy.EquipSound.FormKey ||
+                        weapon.UnequipSound.FormKey != weaponCopy.UnequipSound.FormKey)
+                    {
                         state.PatchMod.Weapons.Set(weaponCopy);
                     }
 
-                    else if (weapon.Keywords.Contains(Skyrim.Keyword.WeapTypeSword) && weapon.Data != null && weapon.Data.Flags.HasFlag(WeaponData.Flag.BoundWeapon) && weapon.AttackFailSound.FormKey != swingBladeLink.FormKey)
+                }
+
+                // Path soul gem sounds.
+                foreach (var soulGem in state.LoadOrder.PriorityOrder.SoulGem().WinningOverrides())
+                {
+                    if (soulGem.Keywords?.Contains(Skyrim.Keyword.VendorItemSoulGem) ?? false)
                     {
-                        weaponCopy.AttackFailSound.SetTo(swingBladeLink);
-                        state.PatchMod.Weapons.Set(weaponCopy);
+                        var soulGemCopy = soulGem.DeepCopy();
+                        soulGemCopy.PickUpSound.SetTo(ImmersiveSoundsCompendium.ITMGemUp);
+                        soulGemCopy.PutDownSound.SetTo(ImmersiveSoundsCompendium.ITMGemDown);
+
+                        if (soulGem.PickUpSound.FormKey != soulGemCopy.PickUpSound.FormKey || soulGem.PutDownSound.FormKey != soulGemCopy.PutDownSound.FormKey)
+                            state.PatchMod.SoulGems.Set(soulGemCopy);
                     }
                 }
-            }
 
-            if (state.LoadOrder.ContainsKey(AudioOverhaulSkyrim))
-            {
-                Console.WriteLine("Detected Audio Overhaul Skyrim.");
-
-                var smallImpactLink = new FormLink<IImpactDataSetGetter>(AudioOverhaulSkyrim.MakeFormKey(0x05B6EA));
-
-                foreach (var weapon in state.LoadOrder.PriorityOrder.Weapon().WinningOverrides())
+                // Patch magic projectile and explosion sounds.
+                foreach (var magicEffect in state.LoadOrder.PriorityOrder.MagicEffect().WinningOverrides())
                 {
-                    if (weapon.Keywords == null) continue;
+                    if (magicEffect.Projectile == null) continue;
 
-                    if (weapon.Keywords.Contains(Skyrim.Keyword.WeapTypeDagger) && weapon.Data != null && !weapon.Data.Flags.HasFlag(WeaponData.Flag.BoundWeapon) && (weapon.ImpactDataSet.FormKey != smallImpactLink.FormKey || weapon.EquipSound.FormKey != Skyrim.SoundDescriptor.WPNBlade1HandSmallDrawSD.FormKey || weapon.UnequipSound.FormKey != Skyrim.SoundDescriptor.WPNBlade1HandSmallSheatheSD.FormKey))
-                    {
-                        var weaponCopy = weapon.DeepCopy();
-                        if (weaponCopy.Name != null && weaponCopy.Name.TryLookup(Language.French, out string i18nWeaponName)) {
-                            weaponCopy.Name = i18nWeaponName;
-                        }
-                        weaponCopy.ImpactDataSet.SetTo(smallImpactLink);
-                        weaponCopy.EquipSound.SetTo(Skyrim.SoundDescriptor.WPNBlade1HandSmallDrawSD);
-                        weaponCopy.UnequipSound.SetTo(Skyrim.SoundDescriptor.WPNBlade1HandSmallSheatheSD);
-                        state.PatchMod.Weapons.Set(weaponCopy);
+                    var magicEffectCopy = magicEffect.DeepCopy();
+                    
+                    if (magicEffectCopy.Name != null && magicEffectCopy.Name.TryLookup(Language.French, out string i18nEffectName)) {
+                        magicEffectCopy.Name = i18nEffectName;
                     }
+                    
+                    if (magicEffectCopy.Description != null && magicEffectCopy.Description.TryLookup(Language.French, out string i18nEffectDescription)) {
+                        magicEffectCopy.Description = i18nEffectDescription;
+                    }
+
+                    if (aosActive)
+                    {
+                        if (AudioOverhaulSkyrim.Projectiles.TryGetValue(magicEffect.Projectile.FormKey, out var replacerProjectile) && replacerProjectile != null)
+                            magicEffectCopy.Projectile.SetTo(replacerProjectile);
+
+                        if (AudioOverhaulSkyrim.Explosions.TryGetValue(magicEffect.Explosion.FormKey, out var replacerExplosion) && replacerExplosion != null)
+                            magicEffectCopy.Explosion.SetTo(replacerExplosion);
+                        /*
+                        WIP - Replace explosion properties in scripts (dwarven spider summons) (reference formkey: 0004EFC6)
+                        foreach (var script in magicEffectCopy.VirtualMachineAdapter.Scripts)
+                        {
+                            foreach (var property in script.Properties)
+                            {
+                                property.
+                                foreach (var containedFormLink in property.ContainedFormLinks)
+                                {
+                                    if (Replacers.Explosions.TryGetValue(containedFormLink.FormKey, out var replacerExplosion)
+                                        containedFormLink.
+                                }
+                            }
+                        }
+                        */
+                    }
+
+                    if (magicEffect.Projectile.FormKey != magicEffectCopy.Projectile.FormKey || magicEffect.Explosion.FormKey != magicEffectCopy.Explosion.FormKey)
+                        state.PatchMod.MagicEffects.Set(magicEffectCopy);
                 }
             }
         }
